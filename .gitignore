@@ -1,0 +1,7 @@
+# ignore everything
+/*
+
+
+# except for
+!.gitignore
+!assignment_1_pde.pde
