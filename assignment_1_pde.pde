@@ -1,5 +1,8 @@
 import processing.video.*; //<>//
 import java.util.Iterator;
+import java.util.NoSuchElementException;
+import java.util.ConcurrentModificationException;
+
 Movie myMovie;
 Movie backgoundMovie;
 
@@ -69,25 +72,11 @@ void draw() {
   {
     image(temp_image, 0, 0);
     
-    // make copy to avoid concurrent modification errors
-    //(Element element : new ArrayList<Element>(mElements))
-    //  for (int i=markers.size()-1; i>=0; i--) {
-    //       Marker m = markers.get(i);
-    //       if (m.size() > 600) m.show();
-    //       markers.remove(m); 
-    //  }
-
-    //ArrayList<Marker> markers_temp = markers;
-    ////marker iterator
-    //Iterator<Marker> marker_iterator = markers_temp.iterator();
+    // safe way to iterate through a list while its being modified (by making a copy)
     for (Marker m : new ArrayList<Marker>(markers)) {
           if (m.size() > 600) m.show();
     }
-    //while(marker_iterator.hasNext()) {
-    //  Marker m = marker_iterator.next();
-    //  if (m.size() > 600) m.show();
-    //}
-    //markers_temp.clear();
+
     markers.clear(); // clear last marker blobs since we're just getting a snapshot
     new_frame = false;
     ball_movement();
@@ -186,14 +175,18 @@ PImage removeBackground(PImage frame) {
           boolean found = false;
           access_array = false; // mutex like flag
           // if its within the distance of another blob then just add to that blob and make it bigger
-          for (Marker m : markers) {
-            if (m != null && m.is_near(x,y)) {
-               m.add(x, y);
-               found = true;
-               break;
-            }
-          }
-          //// otherwise we'll make a new blob
+              try{
+                for (Marker m : markers) {
+                  if (m != null && m.is_near(x,y)) {
+                     m.add(x, y);
+                     found = true;
+                     break;
+                  }
+              }
+             } catch(NoSuchElementException e ) { continue;
+             } catch(ConcurrentModificationException e) { continue; }
+          
+          // otherwise we'll make a new blob
           if (!found && markers != null) {
             Marker m = new Marker(x, y);
             markers.add(m);
