@@ -14,8 +14,8 @@ int RED = 160;
 // monkey limb colour thresholds
 // max red
 int MONKEY_RED_MAX = 255; // monkey limb red value
-int MONKEY_GREEN_MAX = 160;
-int MONKEY_BLUE_MAX = 160;
+int MONKEY_GREEN_MAX = 115;
+int MONKEY_BLUE_MAX = 115;
 // min red
 int MONKEY_RED_MIN = 150; 
 int MONKEY_GREEN_MIN = 30;
@@ -74,7 +74,7 @@ void draw() {
     
     // safe way to iterate through a list while its being modified (by making a copy)
     for (Marker m : new ArrayList<Marker>(markers)) {
-          if (m.size() > 600) m.show();
+          if (m.size() > 200) m.show();
     }
 
     markers.clear(); // clear last marker blobs since we're just getting a snapshot
@@ -183,11 +183,12 @@ PImage removeBackground(PImage frame) {
                      break;
                   }
               }
+              // catch concurrency and no such element errors
              } catch(NoSuchElementException e ) { continue;
              } catch(ConcurrentModificationException e) { continue; }
           
-          // otherwise we'll make a new blob
-          if (!found && markers != null) {
+          // otherwise we'll make a new blob 
+          if (!found && markers != null) { // <= 5 since 5 red markers
             Marker m = new Marker(x, y);
             markers.add(m);
           }
