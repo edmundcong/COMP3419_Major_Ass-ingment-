@@ -8,9 +8,11 @@ Movie backgoundMovie;
 
 // Background removing colour threshholds
 int BLUE_min = 60; // between 90 and 150
-int BLUE_max = 210; // between 90 and 150
-int GREEN = 170;
-int RED = 160;
+int BLUE_max = 255; // between 90 and 150
+int GREEN_max = 200;
+int GREEN_min = 0;
+int RED_max = 180;
+int RED_min = 0;
 // monkey limb colour thresholds
 // max red
 int MONKEY_RED_MAX = 255; // monkey limb red value
@@ -20,7 +22,8 @@ int MONKEY_BLUE_MAX = 115;
 int MONKEY_RED_MIN = 150; 
 int MONKEY_GREEN_MIN = 30;
 int MONKEY_BLUE_MIN = 30;
-int DISTANCE_THRESHOLD = 15;
+
+int DISTANCE_THRESHOLD = 25;
 
 // data structure for markers
 ArrayList<Marker> markers = new ArrayList<Marker>();
@@ -50,6 +53,16 @@ PImage background_temp;
 PVector location;  // Location of shape
 PVector velocity;  // Velocity of shape
 PVector gravity;   // Gravity acts at the shape's acceleration
+PVector attraction;   // force which moves the ball towards the monkey
+// to keep track if we're stuck at the edge of the screen
+float x_ball_location = 0;
+
+// keep track of average location of all blobs for tracking
+float monkey_avg_x = 0;
+float monkey_avg_y = 0;
+float chase_monkey_x = 0;
+float chase_monkey_y = 0;
+float chase_speed = 0.003;
 
 void setup() {
   size(568, 320);
@@ -71,21 +84,51 @@ void draw() {
   if (new_frame)
   {
     image(temp_image, 0, 0);
-    
+    float temp_x = 1;
+    float temp_y = 1;
+    int valid_blobs_counter = 0;
     // safe way to iterate through a list while its being modified (by making a copy)
     for (Marker m : new ArrayList<Marker>(markers)) {
-          if (m.size() > 200) m.show();
+          if (m.size() > 200) {
+            valid_blobs_counter++;
+            m.show();
+            temp_x += (m.minimum_x + m.maximum_x) / 2;
+            temp_y += (m.minimum_y + m.maximum_y) / 2;
+        }
     }
-
+    follow_monkey(temp_x, temp_y, valid_blobs_counter);
     markers.clear(); // clear last marker blobs since we're just getting a snapshot
     new_frame = false;
     ball_movement();
   }
 }
 
+
+void follow_monkey(float temp_x, float temp_y, int valid_blobs_counter) {
+  // get average coord of the monkey
+  if (valid_blobs_counter > 0) {
+     monkey_avg_x = temp_x / valid_blobs_counter;
+     monkey_avg_y = temp_y / valid_blobs_counter;
+     
+     float x_diff = monkey_avg_x - chase_monkey_x;
+     float y_diff = monkey_avg_y - chase_monkey_y;
+     if (abs(x_diff) > 1) {
+         chase_monkey_x += x_diff * chase_speed;
+     }
+     if (abs(y_diff) > 1) {
+         chase_monkey_y += y_diff * chase_speed;
+     }
+    fill(150, 150, 200);
+    ellipse(chase_monkey_x, chase_monkey_y, 15, 15);
+  }
+}
+
 void velocity_degrade() {
    // Bounce off edges
   if ((location.x > width) || (location.x < 0)) {
+    // to avoid getting stuck on boundarys since we dont want it to trigger the boundary of the next frame
+    if (location.x > width) location.x = width;
+    else if (location.x < 0) location.x = 0;
     velocity.x = velocity.x * -0.85; // reduce the velocity ever so slightly
   }
   if (location.y > height) {
@@ -102,12 +145,13 @@ void ball_movement() {
   // Add gravity to velocity
   velocity.add(gravity);
   
+  
   velocity_degrade();
   // Display circle at location vector
   stroke(255);
   if (!monkey_kick) fill(127,0,127);
   if (monkey_kick) fill(0,127,0);
-  ellipse(location.x,location.y,48,48); 
+  ellipse(location.x,location.y,48,48);
 }
 
 void movieEvent(Movie m) {
@@ -138,12 +182,19 @@ void check_wrapped(int wrapped_background_counter) {
 void ball_detection(int x, int y) {
    // if the ball hits the monkey anywhere within a range of the monkey's coords
   if (((location.x > x - 5 && location.x < x + 5) && (location.y > y -5 && location.y < y + 5)) && !monkey_kick) {
-    if (velocity.x < 35 && velocity.x > -35) {
+    if (velocity.x < 35 && velocity.x > -35) { // make sure the ball doesn't go too fast
       monkey_kick = true;
       velocity.x = velocity.x * -1.5;
       velocity.y = velocity.y * -1.2;
     }
-  } 
+  }
+  // if the ball hits the chasing ball
+    if ((location.x > chase_monkey_x - 10 && location.x < chase_monkey_x + 10) && (location.y > chase_monkey_x - 10 && location.y < chase_monkey_x + 10)) {
+    if (velocity.x < 35 && velocity.x > -35) {
+      velocity.x = velocity.x * -1.5;
+      velocity.y = velocity.y * -1.2;
+    }
+  }
 }
 
 PImage removeBackground(PImage frame) {
@@ -162,14 +213,14 @@ PImage removeBackground(PImage frame) {
       } else { 
         continue; 
      }
-      // identify blue background
-      if ( ((red(c) < RED) && (green(c) < GREEN)) && blue(c) > BLUE_min && blue(c) < BLUE_max){
-                frame.pixels[loc] = bc; 
-      } else { // not the background
       // get the red segment markers
       float red = red(c);
       float green = green(c);
       float blue = blue(c);
+      // identify blue background
+      if ( ((red < RED_max) && (green < GREEN_max)) && (blue > BLUE_min && blue < BLUE_max)){
+                frame.pixels[loc] = bc; 
+      } else { // not the background
       if ((red > MONKEY_RED_MIN && red < MONKEY_RED_MAX) && (green > MONKEY_GREEN_MIN && green < MONKEY_GREEN_MAX) && (blue > MONKEY_BLUE_MIN && blue < MONKEY_BLUE_MAX)) {
           // anytime we've found a pixel we add a new marker object only if our arraylist of markers is empty
           boolean found = false;
@@ -188,7 +239,7 @@ PImage removeBackground(PImage frame) {
              } catch(ConcurrentModificationException e) { continue; }
           
           // otherwise we'll make a new blob 
-          if (!found && markers != null) { // <= 5 since 5 red markers
+          if (!found && markers != null && markers.size() <= 5) { // <= 5 since 5 red markers
             Marker m = new Marker(x, y);
             markers.add(m);
           }
