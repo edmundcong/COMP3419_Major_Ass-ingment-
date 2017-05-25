@@ -1,4 +1,4 @@
-import processing.video.*; //<>//
+import processing.video.*; //<>// //<>//
 import processing.sound.*; // can we use this library?
 import java.util.Iterator;
 import java.util.NoSuchElementException;
@@ -16,8 +16,9 @@ PImage lhs;
 PImage rhs;
 PImage banana_left;
 PImage banana_right;
-PImage armour;
+PImage banana_down;
 PImage follower;
+PImage spike_ball;
 
 
 // Background removing colour threshholds
@@ -46,7 +47,7 @@ int CHASER_SIZE = 40;
 ArrayList<Marker> markers = new ArrayList<Marker>();
 
 // background
-int background_frames = 532;
+int background_frames = 900;
 int background_counter = 0;
 PImage[] background_movie = new PImage[background_frames];
 
@@ -85,6 +86,13 @@ float chase_speed = 0.003;
 
 int timer = 0;
 
+float min_x = 568;
+float max_x = 0;
+float min_y = 320;
+float max_y = 0;
+
+float min_dist = 568*320;
+
 void setup() {
   size(568, 320);
   // load sounds
@@ -96,11 +104,12 @@ void setup() {
   rhs = loadImage("rhs_sword.png");
   banana_left = loadImage("banana_left.png");
   banana_right = loadImage("banana_right.png");
-  armour = loadImage("armour.png");
+  banana_down = loadImage("banana_down.png");
   follower = loadImage("follower.png");
+  spike_ball = loadImage("spike_ball.png");
   
   // background movie set up
-  backgoundMovie = new Movie(this, "star_trails_resize.mov");
+  backgoundMovie = new Movie(this, "background.mov");
   backgoundMovie.play();
   backgoundMovie.volume(0);
   
@@ -131,7 +140,8 @@ void draw() {
             temp_y += (m.minimum_y + m.maximum_y) / 2;
         }
     }
-    //if (monkey_kick) image(hit_marker, (int) location.x * - 1.5, (int) location.y * - 1.2, 150, 150);
+    min_dist = 568*320;
+
     follow_monkey(temp_x, temp_y, valid_blobs_counter);
     markers.clear(); // clear last marker blobs since we're just getting a snapshot
     new_frame = false;
@@ -156,8 +166,8 @@ void follow_monkey(float temp_x, float temp_y, int valid_blobs_counter) {
      }
     fill(150, 150, 200);
     image(follower, chase_monkey_x, chase_monkey_y, CHASER_SIZE, CHASER_SIZE);
-    //ellipse(chase_monkey_x, chase_monkey_y, CHASER_SIZE, CHASER_SIZE);
-  }
+
+}
 }
 
 void velocity_degrade() {
@@ -189,11 +199,13 @@ void ball_movement() {
   stroke(255);
   if (!monkey_kick) fill(127,0,127);
   if (monkey_kick) fill(0,127,0);
-  ellipse(location.x,location.y,BALL_SIZE,BALL_SIZE);
+  image(spike_ball, location.x, location.y, BALL_SIZE, BALL_SIZE);
 }
 
 void movieEvent(Movie m) {
   m.read();
+  if (foreground_counter > foreground_frames) exit(); // exit when provided video is finished
+  
   if (m == myMovie) {
     temp_image = m.get(0,0,m.width,m.height);
     temp_image = removeBackground(temp_image);
@@ -204,7 +216,6 @@ void movieEvent(Movie m) {
     background_counter++;
   }
 }
-
 // resets the counter if we're passed the frame length of our background video once
 // otherwise if we're passed it and we've reset it we'll increment the counter
 void check_wrapped(int wrapped_background_counter) {
@@ -221,7 +232,7 @@ void ball_detection(int x, int y) {
      // if the ball hits the monkey anywhere within a range of the monkey's coords
     if (((location.x > x - 5 && location.x < x + 5) && (location.y > y -5 && location.y < y + 5)) && !monkey_kick) {
         if (millis() - timer > 1000)
-        {
+        { 
           hit.play(); // only play every second to avoid lag when ball and monkey ticks too often
           timer = millis();
         }
@@ -240,7 +251,7 @@ void ball_detection(int x, int y) {
         CHASER_SIZE = CHASER_SIZE + 15;
   }
   // if the chasing ball hits the monkey
-   if ((x > chase_monkey_x - CHASER_SIZE && x < chase_monkey_x + CHASER_SIZE) && (y > chase_monkey_y - CHASER_SIZE && y < chase_monkey_y + CHASER_SIZE)) {
+   if ((x > chase_monkey_x - (CHASER_SIZE - 5) && x < chase_monkey_x + (CHASER_SIZE - 5)) && (y > chase_monkey_y - (CHASER_SIZE - 5) && y < chase_monkey_y + (CHASER_SIZE - 5))) {
         chase_monkey_x -= 1.5;
         chase_monkey_y -= 1.2;
   }
@@ -251,7 +262,7 @@ PImage removeBackground(PImage frame) {
   check_wrapped(wrapped_background_counter);
 
   // flag to see if monkey hit it on current frame
-  monkey_kick = false; //<>//
+  monkey_kick = false;
   for (int x = 0; x < frame.width; x ++) {
     for (int y = 0; y < frame.height; y ++) {
       int loc = x + y * frame.width;
@@ -290,7 +301,7 @@ PImage removeBackground(PImage frame) {
              } catch(ConcurrentModificationException e) { continue; }
           
           // otherwise we'll make a new blob 
-          if (!found && markers != null && markers.size() <= 5) { // <= 5 since 5 red markers
+          if (!found && markers != null && markers.size() < 5) { // <= 5 since 5 red markers
             Marker m = new Marker(x, y);
             markers.add(m);
           }
@@ -304,11 +315,6 @@ PImage removeBackground(PImage frame) {
   return frame;
 }
 
-float min_x = 568;
-float max_x = 0;
-float min_y = 320;
-float max_y = 0;
-
 // blob class for marker
 class Marker {
  // keep track of top left and bottom right corners
@@ -321,6 +327,9 @@ class Marker {
  
  // 1 -> left arm, 2 -> right arm, 3 -> left leg, 4 -> right leg, 5 -> chest
  int m_part = 0;
+ 
+ // total distance to all other points
+ float m_sum_dist = 0;
  
  float m_width;
  float m_height;
@@ -361,16 +370,13 @@ class Marker {
    float diff_x = abs((m_screen_width - centre_x));
    float diff_y = abs((m_screen_height - centre_y));
    m_part = 0;
-   //if (centre_x < max_x && centre_x > min_x && centre_y > min_y && centre_y < max_y) {
-   //  //m_part = 5;
-   //} else 
-   if (centre_x < diff_x && centre_y < diff_y) { // top left quadrant
+   if (centre_x < diff_x - 15 && centre_y < diff_y  - 15) { // top left quadrant
      m_part = 1;
-   } else if (centre_x < diff_x && centre_y > diff_y) { // bottom left quadrant
+   } else if (centre_x < diff_x - 15 && centre_y > diff_y + 15 ) { // bottom left quadrant
      m_part = 3;
-   } else if (centre_x > diff_x && centre_y < diff_y) { // top right quadrant
+   } else if (centre_x > diff_x  + 15 && centre_y < diff_y - 15) { // top right quadrant
      m_part = 2;
-   } else if (centre_x > diff_y && centre_y > diff_y) { // bottom right quadrant 
+   } else if (centre_x > diff_y + 15 && centre_y > diff_y + 15 ) { // bottom right quadrant 
      m_part = 4;
    } 
  }
@@ -403,17 +409,9 @@ class Marker {
     } else if (m_part == 4) {
        image(banana_right, minimum_x, minimum_y, 80, 80);
     } else {
-       image(armour, minimum_x, minimum_y, 80, 80);
-    }
-        //stroke(0);
-        //fill(255);
-        //strokeWeight(2);
-        //rectMode(CORNERS); // allows you to specify corners
-        //rect(minimum_x, minimum_y, maximum_x, maximum_y); 
-        //textSize(20); 
-        //text(Integer.toString(m_part), minimum_x, minimum_y);  // Text wraps within text box   
-    //}
+       image(banana_down, minimum_x, minimum_y, 80, 80);
   }
+ }
   
   float size() {
    return (maximum_x - minimum_x) * (maximum_y - minimum_y); 
