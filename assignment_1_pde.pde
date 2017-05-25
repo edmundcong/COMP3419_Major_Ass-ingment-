@@ -1,10 +1,24 @@
 import processing.video.*; //<>//
+import processing.sound.*; // can we use this library?
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.ConcurrentModificationException;
 
 Movie myMovie;
 Movie backgoundMovie;
+
+// sound file globals
+SoundFile boing;
+SoundFile hit;
+
+//image globals
+PImage lhs;
+PImage rhs;
+PImage banana_left;
+PImage banana_right;
+PImage armour;
+PImage follower;
+
 
 // Background removing colour threshholds
 int BLUE_min = 60; // between 90 and 150
@@ -24,6 +38,9 @@ int MONKEY_GREEN_MIN = 30;
 int MONKEY_BLUE_MIN = 30;
 
 int DISTANCE_THRESHOLD = 25;
+
+int BALL_SIZE = 48;
+int CHASER_SIZE = 40;
 
 // data structure for markers
 ArrayList<Marker> markers = new ArrayList<Marker>();
@@ -60,15 +77,32 @@ float x_ball_location = 0;
 // keep track of average location of all blobs for tracking
 float monkey_avg_x = 0;
 float monkey_avg_y = 0;
+
+int chasers = 1;
 float chase_monkey_x = 0;
 float chase_monkey_y = 0;
 float chase_speed = 0.003;
 
+int timer = 0;
+
 void setup() {
   size(568, 320);
+  // load sounds
+  boing = new SoundFile(this, "boing.mp3");
+  hit = new SoundFile(this, "hit.wav");
+  
+  // load images
+  lhs = loadImage("lhs_sword.png");
+  rhs = loadImage("rhs_sword.png");
+  banana_left = loadImage("banana_left.png");
+  banana_right = loadImage("banana_right.png");
+  armour = loadImage("armour.png");
+  follower = loadImage("follower.png");
+  
   // background movie set up
   backgoundMovie = new Movie(this, "star_trails_resize.mov");
   backgoundMovie.play();
+  backgoundMovie.volume(0);
   
   // object set up
   location = new PVector(100,100);
@@ -78,6 +112,7 @@ void setup() {
   // foreground video set up
   myMovie = new Movie(this, "monkey.mov");
   myMovie.play();
+  myMovie.volume(0);
 }
   
 void draw() {
@@ -89,13 +124,14 @@ void draw() {
     int valid_blobs_counter = 0;
     // safe way to iterate through a list while its being modified (by making a copy)
     for (Marker m : new ArrayList<Marker>(markers)) {
-          if (m.size() > 200) {
+          if (m.size() > 250) {
             valid_blobs_counter++;
             m.show();
             temp_x += (m.minimum_x + m.maximum_x) / 2;
             temp_y += (m.minimum_y + m.maximum_y) / 2;
         }
     }
+    //if (monkey_kick) image(hit_marker, (int) location.x * - 1.5, (int) location.y * - 1.2, 150, 150);
     follow_monkey(temp_x, temp_y, valid_blobs_counter);
     markers.clear(); // clear last marker blobs since we're just getting a snapshot
     new_frame = false;
@@ -119,7 +155,8 @@ void follow_monkey(float temp_x, float temp_y, int valid_blobs_counter) {
          chase_monkey_y += y_diff * chase_speed;
      }
     fill(150, 150, 200);
-    ellipse(chase_monkey_x, chase_monkey_y, 15, 15);
+    image(follower, chase_monkey_x, chase_monkey_y, CHASER_SIZE, CHASER_SIZE);
+    //ellipse(chase_monkey_x, chase_monkey_y, CHASER_SIZE, CHASER_SIZE);
   }
 }
 
@@ -130,6 +167,7 @@ void velocity_degrade() {
     if (location.x > width) location.x = width;
     else if (location.x < 0) location.x = 0;
     velocity.x = velocity.x * -0.85; // reduce the velocity ever so slightly
+    boing.play();
   }
   if (location.y > height) {
     // We're reducing velocity ever so slightly 
@@ -151,7 +189,7 @@ void ball_movement() {
   stroke(255);
   if (!monkey_kick) fill(127,0,127);
   if (monkey_kick) fill(0,127,0);
-  ellipse(location.x,location.y,48,48);
+  ellipse(location.x,location.y,BALL_SIZE,BALL_SIZE);
 }
 
 void movieEvent(Movie m) {
@@ -180,20 +218,31 @@ void check_wrapped(int wrapped_background_counter) {
 }
 
 void ball_detection(int x, int y) {
-   // if the ball hits the monkey anywhere within a range of the monkey's coords
-  if (((location.x > x - 5 && location.x < x + 5) && (location.y > y -5 && location.y < y + 5)) && !monkey_kick) {
-    if (velocity.x < 35 && velocity.x > -35) { // make sure the ball doesn't go too fast
-      monkey_kick = true;
-      velocity.x = velocity.x * -1.5;
-      velocity.y = velocity.y * -1.2;
+     // if the ball hits the monkey anywhere within a range of the monkey's coords
+    if (((location.x > x - 5 && location.x < x + 5) && (location.y > y -5 && location.y < y + 5)) && !monkey_kick) {
+        if (millis() - timer > 1000)
+        {
+          hit.play(); // only play every second to avoid lag when ball and monkey ticks too often
+          timer = millis();
+        }
+      if (velocity.x < 35 && velocity.x > -35) { // make sure the ball doesn't go too fast
+        monkey_kick = true;
+        velocity.x = velocity.x * -1.5;
+        velocity.y = velocity.y * -1.2;
+        //image(hit_marker, x, y, 150, 150);
+      }
     }
+    // if the ball hits the chasing ball
+    if ((location.x > chase_monkey_x - 25 && location.x < chase_monkey_x + 25) && 
+        (location.y > chase_monkey_y - 25 && location.y < chase_monkey_y + 25)) {
+        chase_monkey_x -= 25;
+        chase_monkey_y -= 25;
+        CHASER_SIZE = CHASER_SIZE + 15;
   }
-  // if the ball hits the chasing ball
-    if ((location.x > chase_monkey_x - 10 && location.x < chase_monkey_x + 10) && (location.y > chase_monkey_x - 10 && location.y < chase_monkey_x + 10)) {
-    if (velocity.x < 35 && velocity.x > -35) {
-      velocity.x = velocity.x * -1.5;
-      velocity.y = velocity.y * -1.2;
-    }
+  // if the chasing ball hits the monkey
+   if ((x > chase_monkey_x - CHASER_SIZE && x < chase_monkey_x + CHASER_SIZE) && (y > chase_monkey_y - CHASER_SIZE && y < chase_monkey_y + CHASER_SIZE)) {
+        chase_monkey_x -= 1.5;
+        chase_monkey_y -= 1.2;
   }
 }
 
@@ -218,7 +267,7 @@ PImage removeBackground(PImage frame) {
       float green = green(c);
       float blue = blue(c);
       // identify blue background
-      if ( ((red < RED_max) && (green < GREEN_max)) && (blue > BLUE_min && blue < BLUE_max)){
+      if ( ((red > RED_min && red < RED_max) && (green > GREEN_min && green < GREEN_max)) && (blue > BLUE_min && blue < BLUE_max)){
                 frame.pixels[loc] = bc; 
       } else { // not the background
       if ((red > MONKEY_RED_MIN && red < MONKEY_RED_MAX) && (green > MONKEY_GREEN_MIN && green < MONKEY_GREEN_MAX) && (blue > MONKEY_BLUE_MIN && blue < MONKEY_BLUE_MAX)) {
@@ -232,6 +281,8 @@ PImage removeBackground(PImage frame) {
                      m.add(x, y);
                      found = true;
                      break;
+                  } else { // not adding more to blob
+                    
                   }
               }
               // catch concurrency and no such element errors
@@ -253,6 +304,11 @@ PImage removeBackground(PImage frame) {
   return frame;
 }
 
+float min_x = 568;
+float max_x = 0;
+float min_y = 320;
+float max_y = 0;
+
 // blob class for marker
 class Marker {
  // keep track of top left and bottom right corners
@@ -260,9 +316,17 @@ class Marker {
  float minimum_y;
  float maximum_x;
  float maximum_y;
+ float centre_x;
+ float centre_y;
+ 
+ // 1 -> left arm, 2 -> right arm, 3 -> left leg, 4 -> right leg, 5 -> chest
+ int m_part = 0;
  
  float m_width;
  float m_height;
+ 
+ float m_screen_width = 568;
+ float m_screen_height = 320;
  
  // constructor
  Marker(float x_arg, float y_arg) {
@@ -270,6 +334,45 @@ class Marker {
   maximum_x = x_arg;
   minimum_y = y_arg;
   maximum_y = y_arg;
+  centre_x = (minimum_x + maximum_x) / 2;
+  centre_y = (minimum_y + maximum_y) / 2;
+  closest_point();
+ }
+ 
+ // get locations of points closest to the corners
+ void get_bounds() {
+   if (centre_x < min_x) {
+    min_x = centre_x; 
+   }
+   if (centre_x > max_x) {
+    max_x = centre_x; 
+   }
+   if (centre_y < min_y) {
+    min_y = centre_y; 
+   }
+   if (centre_y > max_y) {
+    max_y = centre_y; 
+   }
+ }
+ 
+ // find the closest point the monkey's blob is closest to
+ void closest_point() {
+   get_bounds();
+   float diff_x = abs((m_screen_width - centre_x));
+   float diff_y = abs((m_screen_height - centre_y));
+   m_part = 0;
+   //if (centre_x < max_x && centre_x > min_x && centre_y > min_y && centre_y < max_y) {
+   //  //m_part = 5;
+   //} else 
+   if (centre_x < diff_x && centre_y < diff_y) { // top left quadrant
+     m_part = 1;
+   } else if (centre_x < diff_x && centre_y > diff_y) { // bottom left quadrant
+     m_part = 3;
+   } else if (centre_x > diff_x && centre_y < diff_y) { // top right quadrant
+     m_part = 2;
+   } else if (centre_x > diff_y && centre_y > diff_y) { // bottom right quadrant 
+     m_part = 4;
+   } 
  }
  
  float distance(float x_a, float y_a, float x_b, float y_b) {
@@ -279,8 +382,8 @@ class Marker {
  
   boolean is_near(float x_arg, float y_arg) {
     // finding the centre of the marker blob
-    float centre_x = (minimum_x + maximum_x) / 2;
-    float centre_y = (minimum_y + maximum_y) / 2;
+    centre_x = (minimum_x + maximum_x) / 2;
+    centre_y = (minimum_y + maximum_y) / 2;
 
     float distance = distance(centre_x, centre_y, x_arg, y_arg);
     if (distance < DISTANCE_THRESHOLD*DISTANCE_THRESHOLD) {
@@ -291,11 +394,25 @@ class Marker {
   }
   
   void show() {
-    stroke(0);
-    fill(255);
-    strokeWeight(2);
-    rectMode(CORNERS); // allows you to specify corners
-    rect(minimum_x, minimum_y, maximum_x, maximum_y);
+    if (m_part == 1) {
+       image(lhs, minimum_x, minimum_y, 80, 80);
+    } else if (m_part == 2) {
+       image(rhs, minimum_x, minimum_y, 80, 80);
+    } else if (m_part == 3) {
+       image(banana_left, minimum_x, minimum_y, 80, 80);
+    } else if (m_part == 4) {
+       image(banana_right, minimum_x, minimum_y, 80, 80);
+    } else {
+       image(armour, minimum_x, minimum_y, 80, 80);
+    }
+        //stroke(0);
+        //fill(255);
+        //strokeWeight(2);
+        //rectMode(CORNERS); // allows you to specify corners
+        //rect(minimum_x, minimum_y, maximum_x, maximum_y); 
+        //textSize(20); 
+        //text(Integer.toString(m_part), minimum_x, minimum_y);  // Text wraps within text box   
+    //}
   }
   
   float size() {
@@ -307,6 +424,7 @@ class Marker {
     minimum_y = min(minimum_y, y_arg);
     maximum_x = max(maximum_x, x_arg);
     maximum_y = max(maximum_y, y_arg);
+    closest_point();
   }
   
 }
